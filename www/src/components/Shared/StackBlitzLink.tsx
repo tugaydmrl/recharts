@@ -3,7 +3,8 @@ import stackblitzSdk, { ProjectDependencies } from '@stackblitz/sdk';
 
 import cssVars from '../../styles/_variables.css?raw';
 import { sendEvent } from '../analytics.ts';
-import { ColorMode } from '../color-mode';
+import { ColorMode, getColorModeState } from '../color-mode';
+import stackBlitzThemeProviderCode from './StackBlitzThemeProvider.tsx?raw';
 
 type StackBlitzLinkProps = Readonly<{
   /**
@@ -31,6 +32,7 @@ import { RechartsDevtoolsContext, RechartsDevtoolsPortal } from '@recharts/devto
 
 import './index.css';
 import Example from './Example';
+import { StackBlitzThemeProvider } from './StackBlitzThemeProvider';
 
 const container = document.getElementById('root');
 if (!container) {
@@ -47,7 +49,11 @@ const AppWithDevtools = () => {
   </RechartsDevtoolsContext>
 }
 
-root.render(<AppWithDevtools />);
+root.render(
+  <StackBlitzThemeProvider>
+    <AppWithDevtools />
+  </StackBlitzThemeProvider>
+);
 `.trim();
 
 // language=HTML
@@ -96,7 +102,8 @@ const dependencies: ProjectDependencies = {
   react: reactVersion,
   'react-is': reactVersion,
   'react-dom': reactVersion,
-  recharts: 'latest',
+  // Recharts 3.10 only themes the grid; chart-wide theme support starts in 3.11.
+  recharts: '^3.11.0-canary.4',
 };
 
 const devDependencies: ProjectDependencies = {
@@ -104,7 +111,7 @@ const devDependencies: ProjectDependencies = {
   '@types/react-dom': reactVersion,
   typescript: '^5.0.0',
   vite: '^7.0.0',
-  '@recharts/devtools': 'latest',
+  '@recharts/devtools': '0.0.18',
   '@vitejs/plugin-react': '^5.0.2',
 };
 
@@ -117,6 +124,14 @@ const packageJson = {
   },
   dependencies,
   devDependencies,
+  // Devtools 0.0.18 pins Recharts to 3.9.0, which predates the theme API.
+  // Revisit after stable 3.11 and the devtools peer range fix are released:
+  // https://github.com/recharts/devtools/commit/82ea12bfcbadf3a380bb8fcf9d3da9ad9deb82be
+  overrides: {
+    '@recharts/devtools@0.0.18': {
+      recharts: '$recharts',
+    },
+  },
 };
 
 const viteConfigTs = `import { defineConfig } from 'vite'
@@ -140,6 +155,7 @@ export function StackBlitzLink({ code, title, children }: StackBlitzLinkProps) {
       type="button"
       className="codemirror-toolbar-item"
       onClick={e => {
+        const colorMode = getColorModeState().mode;
         e.preventDefault();
         sendEvent({
           category: 'StackBlitz',
@@ -157,12 +173,13 @@ export function StackBlitzLink({ code, title, children }: StackBlitzLinkProps) {
             template: 'node',
             title,
             files: {
-              'index.html': indexHtmlCode({ title, mode: 'light' }),
+              'index.html': indexHtmlCode({ title, mode: colorMode }),
               'src/index.css': cssVars,
               /*
                * This file has tsx in it, and create-react-app supports TypeScript out of the box.
                */
               'src/index.tsx': indexTsxCode(title),
+              'src/StackBlitzThemeProvider.tsx': stackBlitzThemeProviderCode,
               'src/Example.tsx': code,
               'tsconfig.json': tsconfigJsonCode,
               'package.json': JSON.stringify(packageJson, null, 2),
@@ -178,7 +195,7 @@ export function StackBlitzLink({ code, title, children }: StackBlitzLinkProps) {
              * People interested in browsing package.json or other files can always open the sidebar with a click.
              */
             showSidebar: false,
-            theme: 'light',
+            theme: colorMode,
             /*
              * The only interesting message in the terminal is "Vite dev server running at..."
              * so it doesn't need to be very tall.
